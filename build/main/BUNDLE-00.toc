@@ -1,0 +1,3 @@
+([('main',
+   '/Users/chanaimac/pythondesktop/stockfund/dist/main',
+   'EXECUTABLE')],)
