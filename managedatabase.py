@@ -10,6 +10,14 @@ import sqlite3
 # นำเข้าโครงสร้างตารางจาก create_database.py โดยตรง
 from create_database import (CREATE_LOTS_TABLE, CREATE_DIVIDENDS_TABLE, CREATE_CAPITAL_RETURNS_TABLE, CREATE_SALES_TABLE,
                              CREATE_WAITING_LOTS_TABLE)
+
+
+# โฟลเดอร์ฐานข้อมูล iCloud (ใช้ร่วมกับ Pythonista iOS)
+ICLOUD_PYTHONISTA_DIR = os.path.expanduser(
+    "~/Library/Mobile Documents/iCloud~com~omz-software~Pythonista3/Documents"
+)
+STOCK_IOS_DB_DIR = os.path.join(ICLOUD_PYTHONISTA_DIR, "stockfundios")
+
 class Appdb(tk.Toplevel):
     def __init__(self, parent, on_open_success=None):
         super().__init__(parent)
@@ -53,7 +61,7 @@ class Appdb(tk.Toplevel):
         from tkinter import simpledialog
         
         # 1. กำหนดโฟลเดอร์เป้าหมาย (Locked Path)
-        target_dir = '/Users/chanaimac/Library/Mobile Documents/iCloud~com~omz-software~Pythonista3/Documents/stockfundios'
+        target_dir = STOCK_IOS_DB_DIR
         
         if not os.path.exists(target_dir):
             try:
@@ -141,6 +149,7 @@ class Appdb(tk.Toplevel):
         filepath = filedialog.askopenfilename(
             parent=self,
             title="เปิดไฟล์ฐานข้อมูล",
+            initialdir=STOCK_IOS_DB_DIR,
             filetypes=filetypes
         )
 
