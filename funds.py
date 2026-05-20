@@ -100,34 +100,24 @@ class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น 
         self.status_bar = chmodule.ChClass.status_bar("Ready", self)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
-        self.create_Menubar()
-        # ลองเปิดไฟล์ล่าสุดเมื่อเริ่มต้น ถ้าไม่สำเร็จ ให้แสดงหน้าจอเริ่มต้น
-        if not self._try_open_recent_on_startup():
-            self.create_widgets()
-
-        self.deiconify() # แสดงหน้าต่างนี้หลังจากสร้างปุ่มต่าง ๆ เสร็จแล้ว
+        self.deiconify() # แสดงหน้าต่างหลักเพื่อใช้เป็น parent ของ dialog เลือกไฟล์
+        self._force_select_database()
         # เมื่อหน้าต่างหลักนี้ปิด ให้ปิดหน้าต่าง db_manager ที่ซ่อนอยู่ด้วย
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         
-        # --- เพิ่มคีย์ลัด (Shortcut) ---
-        self.bind("<Control-r>", lambda event: self.open_recent_database())
 
     def on_close(self):
         self.parent.deiconify() # แสดงหน้าต่างหลักอีกครั้ง
         self.destroy() # ปิดแค่หน้าต่างนี้
 
-    def create_Menubar(self):
-        menubar = tk.Menu(self)
-        self.config(menu=menubar)
-        # --- Menu "การทำงาน" ---
-        # แก้ไข: แยก command ออกมาเป็นฟังก์ชันเพื่อเพิ่ม logic การตรวจสอบ
-        work_menu = tk.Menu(menubar, tearoff=0)
-        work_menu.add_command(label="เปิด ไฟล์ฐานข้อมูลล่าสุด", command=self.open_recent_database, accelerator="Ctrl+R")
-        work_menu.add_command(label="สร้างฐานข้อมูลใหม่", command=self._prompt_create_new_db)
-        work_menu.add_command(label="เปิดไฟล์ฐานข้อมูล", command=self._prompt_open_db)
-        work_menu.add_separator()
-        work_menu.add_command(label="ปิดโปรแกรม", command=self.on_close) 
-        menubar.add_cascade(label="การทำงาน", menu=work_menu)
+    def _force_select_database(self):
+        """บังคับให้ผู้ใช้เลือกไฟล์ฐานข้อมูลก่อนเริ่มใช้งาน"""
+        self.db_manager.open_database("fund")
+        if not getattr(self.db_manager, "db_path", None):
+            messagebox.showinfo("ยังไม่ได้เลือกไฟล์", "ยังไม่ได้เลือกไฟล์ฐานข้อมูล โปรแกรมจะกลับไปหน้าหลัก", parent=self)
+            self.on_close()
+
+
 
     def _confirm_and_reset(self, action_name):
         """ถามยืนยันผู้ใช้ก่อนรีเซ็ตหน้าจอ หากมีฐานข้อมูลเปิดอยู่"""
