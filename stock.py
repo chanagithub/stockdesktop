@@ -43,6 +43,12 @@ class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น 
 
         self.deiconify() # แสดงหน้าต่างหลักเพื่อใช้เป็น parent ของ dialog เลือกไฟล์
         self._force_select_database()
+        self.create_Menubar()
+
+        # เริ่มต้นด้วยหน้าจอเลือกการทำงานเสมอ (ไม่เปิดไฟล์ล่าสุดอัตโนมัติ)
+        self.create_widgets()
+
+        self.deiconify() # แสดงหน้าต่างนี้หลังจากสร้างปุ่มต่าง ๆ เสร็จแล้ว
         # เมื่อหน้าต่างหลักนี้ปิด ให้ปิดหน้าต่าง db_manager ที่ซ่อนอยู่ด้วย
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         
