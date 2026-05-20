@@ -43,12 +43,6 @@ class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น 
 
         self.deiconify() # แสดงหน้าต่างหลักเพื่อใช้เป็น parent ของ dialog เลือกไฟล์
         self._force_select_database()
-        self.create_Menubar()
-
-        # เริ่มต้นด้วยหน้าจอเลือกการทำงานเสมอ (ไม่เปิดไฟล์ล่าสุดอัตโนมัติ)
-        self.create_widgets()
-
-        self.deiconify() # แสดงหน้าต่างนี้หลังจากสร้างปุ่มต่าง ๆ เสร็จแล้ว
         # เมื่อหน้าต่างหลักนี้ปิด ให้ปิดหน้าต่าง db_manager ที่ซ่อนอยู่ด้วย
         self.protocol("WM_DELETE_WINDOW", self.on_close)
         
@@ -117,13 +111,11 @@ class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น 
         if hasattr(self, 'exit_button') and self.exit_button.winfo_exists():
             self.exit_button.place_forget()
 
-        # ล้าง widget เก่าทั้งหมดใน self เพื่อเตรียมสร้างหน้าใหม่ (ยกเว้น menubar และ statusbar)
-        # แก้ไข: ตรวจสอบให้รัดกุมขึ้น เพื่อไม่ให้ลบ status_bar.master (Frame) และ menubar
+        # ล้าง widget เก่าในหน้าต่าง ยกเว้น status bar
         for widget in self.winfo_children():
             if widget is self.status_bar.master: # ถ้าเป็น Frame ของ status bar ให้ข้ามไป
                 continue
-            if not isinstance(widget, tk.Menu): # ไม่ลบ Menu bar
-                widget.destroy()
+            widget.destroy()
 
         # --- (เพิ่ม) Label แสดงชื่อไฟล์ที่กำลังเปิด ---
         db_name = os.path.basename(db_path)
@@ -143,12 +135,11 @@ class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น 
 
     def reset_to_initial_state(self):
         """ล้างหน้าจอและวิดเจ็ตทั้งหมด กลับไปที่หน้าจอเริ่มต้น"""
-        # ล้างวิดเจ็ตทั้งหมด ยกเว้น menubar และ statusbar
+        # ล้างวิดเจ็ตทั้งหมด ยกเว้น status bar
         for widget in self.winfo_children():
             if widget is self.status_bar.master:
                 continue
-            if not isinstance(widget, tk.Menu):
-                widget.destroy()
+            widget.destroy()
         
         # ล้างค่า db_path ที่เก็บไว้
         self.db_manager.db_path = None

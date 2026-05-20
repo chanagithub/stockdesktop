@@ -33,7 +33,7 @@ class Appdb(tk.Toplevel):
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)         
         self.create_widgets()   
         self.attributes('-topmost', True)
-        self.create_menubar()
+        self.withdraw()
 
     def create_widgets(self):
         # Load custom font
@@ -44,17 +44,6 @@ class Appdb(tk.Toplevel):
 
         chmodule.ChClass.create_canvas_buttons_center_for_data_management(self)
 
-    def create_menubar(self):
-        menubar = tk.Menu(self)
-        self.config(menu=menubar)
-
-        # --- Menu "การทำงาน" ---
-        work_menu = tk.Menu(menubar, tearoff=0)
-        work_menu.add_command(label="Create Database", command=lambda: self.create_database(""))
-        work_menu.add_command(label="Open Database", command=self.open_database)
-        work_menu.add_separator()
-        work_menu.add_command(label="ออก", command=self.destroy)
-        menubar.add_cascade(label="File", menu=work_menu)
 
     def create_database(self, inital_filename=None):
         """รับชื่อไฟล์และสร้างฐานข้อมูลในโฟลเดอร์ iCloud ที่กำหนดไว้เท่านั้น"""
@@ -138,16 +127,12 @@ class Appdb(tk.Toplevel):
 
     def open_database(self, prefix=None):
         """Opens a file dialog to select an existing database and validates its schema."""
-        # แสดงและตั้งค่า topmost ชั่วคราวก่อนเปิด filedialog
-        self.deiconify()
-        self.attributes('-topmost', True)
-
         filetypes = [("Database Files", "*.db"), ("All Files", "*.*")]
         if prefix:
             filetypes.insert(0, (f"{prefix} database files", f"{prefix}*.db"))
 
         filepath = filedialog.askopenfilename(
-            parent=self,
+            parent=self.parent,
             title="เปิดไฟล์ฐานข้อมูล",
             initialdir=STOCK_IOS_DB_DIR,
             filetypes=filetypes
@@ -163,8 +148,6 @@ class Appdb(tk.Toplevel):
                 f"กรุณาเลือกไฟล์ฐานข้อมูลที่ขึ้นต้นด้วย '{prefix}'",
                 parent=self
             )
-            self.attributes('-topmost', False)
-            self.deiconify()
             self._update_statusbar("เลือกไฟล์ไม่ตรงประเภท")
             return
 
@@ -175,7 +158,6 @@ class Appdb(tk.Toplevel):
             self._update_statusbar(f"ไฟล์ที่เลือก: {filepath}")
             # --- จุดแก้ไข: ย้าย withdraw() มาไว้ที่นี่ ---
             # ซ่อนหน้าต่างนี้หลังจากที่เลือกไฟล์และตรวจสอบสำเร็จแล้ว
-            self.attributes('-topmost', False)
             self.withdraw()
             # --- จุดแก้ไข: เรียก callback function ถ้ามี ---
             if self.on_open_success_callback:
@@ -185,8 +167,6 @@ class Appdb(tk.Toplevel):
         else:
             messagebox.showerror("ไฟล์ไม่ถูกต้อง", f"โครงสร้างของไฟล์ '{os.path.basename(filepath)}' ไม่ถูกต้อง\n\n{error_message}")
             # --- จุดแก้ไข: ยกเลิก topmost หากไฟล์ไม่ถูกต้อง ---
-            self.attributes('-topmost', False)
-            self.deiconify() # แสดงหน้าต่างค้างไว้เพื่อให้ผู้ใช้เห็นข้อผิดพลาด
             self._update_statusbar("เลือกไฟล์ที่โครงสร้างไม่ถูกต้อง")
 
     def _get_db_schema(self, db_path):
