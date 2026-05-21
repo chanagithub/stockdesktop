@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import ttk
-from tkinter import font as tkfont, messagebox,filedialog  
+from tkinter import font as tkfont
+from tkinter import filedialog, messagebox
 from pathlib import Path    
 from find_saved_datafile_path import FindSavedDatafilePath
  
@@ -27,11 +28,25 @@ from managedatabase import Appdb # Import Appdb เพื่อเรียก�
 class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น tk.Toplevel
     def __init__(self, parent, display_image=None, door_icon=None):
         super().__init__(parent)
-        parent.self = parent
+        self.parent = parent
         self.title("Stock window")
+
+         # --- (แก้ไข) รับอ็อบเจกต์รูปภาพมาโดยตรง ไม่ต้องโหลดใหม่ ---
+        self.iconphoto(True, parent.icon_image) # ใช้ไอคอนเดียวกับหน้าต่างหลัก
+        self.display_image = display_image
+        self.door_icon = door_icon
+
+        chmodule.ChClass.setwindowcenter(self, 500, 320)
+        self.status_bar = chmodule.ChClass.status_bar("Ready", self)
+        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        
+
 
         # เรียก dialog หลังจาก window สร้างเสร็จ
         self.after(100, self.open_file_dialog)
+        self._create_transaction_buttons() # สร้างปุ่มต่าง ๆ หลังจากเปิด dialog แล้ว
+        self.deiconify() # แสดงหน้าต่างนี้หลังจากสร้างปุ่มต่าง ๆ เสร็จแล้ว
+
 
 
     def open_file_dialog(self):
@@ -68,155 +83,6 @@ class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น 
         self.destroy()
 
 
-
-
-
-    def _confirm_and_reset(self, action_name):
-        """ถามยืนยันผู้ใช้ก่อนรีเซ็ตหน้าจอ หากมีฐานข้อมูลเปิดอยู่"""
-        # ตรวจสอบว่ามี db_path อยู่หรือไม่ (แสดงว่ามีไฟล์เปิดอยู่)
-        if hasattr(self.db_manager, 'db_path') and self.db_manager.db_path:
-            msg = f"คุณกำลังเปิดฐานข้อมูล '{os.path.basename(self.db_manager.db_path)}' อยู่\n\n" \
-                  f"การ{action_name}จะปิดไฟล์ปัจจุบันและกลับสู่หน้าจอเริ่มต้น\n" \
-                  "คุณต้องการดำเนินการต่อหรือไม่?"
-            if not messagebox.askyesno("ยืนยันการดำเนินการ", msg, parent=self):
-                return False # ผู้ใช้ยกเลิก
-        
-        # รีเซ็ตหน้าจอให้กลับไปเหมือนตอนเริ่มต้น
-        self.reset_to_initial_state()
-        return True
-
-    def _prompt_create_new_db(self):
-        if self._confirm_and_reset("สร้างฐานข้อมูลใหม่"):
-            self.create_stock_database()
-
-    def _prompt_open_db(self):
-        if self._confirm_and_reset("เปิดไฟล์ฐานข้อมูล"):
-            self.db_manager.open_database("stock")
-
-    def create_stock_database(self):
-        """
-        แก้ไข: เรียกใช้ create_database และส่ง path ของไฟล์ที่สร้างใหม่
-        กลับมาที่ on_database_opened เพื่อจัดการหน้าต่างอย่างถูกต้อง
-        """
-        new_db_path = self.db_manager.create_database("stock")
-        if new_db_path: # ตรวจสอบว่าผู้ใช้ไม่ได้กดยกเลิก
-            self.on_database_opened(new_db_path)
-        
-
-
-    def reset_to_initial_state(self):
-        """ล้างหน้าจอและวิดเจ็ตทั้งหมด กลับไปที่หน้าจอเริ่มต้น"""
-        # ล้างวิดเจ็ตทั้งหมด ยกเว้น status bar
-        for widget in self.winfo_children():
-            if widget is self.status_bar.master:
-                continue
-            widget.destroy()
-        
-        # ล้างค่า db_path ที่เก็บไว้
-        self.db_manager.db_path = None
-        try:
-            # ล้างไฟล์ที่เก็บบันทึกไฟล์ล่าสุด
-            if os.path.exists(self.recent_db_file):
-                os.remove(self.recent_db_file)
-        except Exception as e:
-            print(f"ไม่สามารถลบไฟล์ recent_db.txt ได้: {e}")
-
-        self.create_widgets() # สร้างหน้าจอเริ่มต้นขึ้นมาใหม่
-
-    def _try_open_recent_on_startup(self):
-        """
-        พยายามเปิดไฟล์ฐานข้อมูลล่าสุดเมื่อโปรแกรมเริ่มทำงาน
-        คืนค่า True หากสำเร็จ, False หากล้มเหลว (เพื่อให้แสดงหน้าจอเริ่มต้น)
-        """
-        try:
-            if not os.path.exists(self.recent_db_file):
-                return False
-
-            with open(self.recent_db_file, 'r') as f:
-                db_path = f.read().strip()
-
-            if not db_path or not os.path.exists(db_path):
-                return False
-
-            # ตรวจสอบความถูกต้องของไฟล์ก่อนเปิด
-            is_valid, _ = self.db_manager._is_schema_valid(db_path)
-            if is_valid:
-                self.on_database_opened(db_path)
-                return True
-            else:
-                return False
-        except Exception:
-            return False # หากมีข้อผิดพลาดใดๆ ให้กลับไปหน้าจอเริ่มต้น
-
-    def open_recent_database(self):
-        """อ่านพาธจากไฟล์ config และเปิดฐานข้อมูลล่าสุด"""
-        try:
-            if not os.path.exists(self.recent_db_file):
-                messagebox.showwarning("ไม่พบไฟล์ล่าสุด", "ยังไม่มีประวัติการเปิดไฟล์ฐานข้อมูลล่าสุด")
-                return
-
-            with open(self.recent_db_file, 'r') as f:
-                db_path = f.read().strip()
-
-            if not db_path:
-                messagebox.showwarning("ไม่พบไฟล์ล่าสุด", "ประวัติการเปิดไฟล์ล่าสุดว่างเปล่า")
-                return
-
-            if not os.path.exists(db_path):
-                messagebox.showerror("เกิดข้อผิดพลาด", f"ไม่พบไฟล์ฐานข้อมูลที่:\n{db_path}\nไฟล์อาจถูกย้ายหรือลบไปแล้ว")
-                return
-
-            # ตรวจสอบความถูกต้องของไฟล์ก่อนเปิด
-            is_valid, error_message = self.db_manager._is_schema_valid(db_path)
-            if is_valid:
-                self.on_database_opened(db_path)
-            else:
-                messagebox.showerror("ไฟล์ไม่ถูกต้อง", f"โครงสร้างของไฟล์ '{os.path.basename(db_path)}' ไม่ถูกต้อง\n\n{error_message}")
-
-        except Exception as e:
-            messagebox.showerror("เกิดข้อผิดพลาด", f"ไม่สามารถเปิดไฟล์ล่าสุดได้: {e}")
-
-    def create_widgets(self):
-        
-
-        # Load custom font
-        self.custom_font = tkfont.Font(family="Helvetica", size=12, weight="bold")
-        self.instruction_font = tkfont.Font(family="Helvetica", size=12) # สร้างฟอนต์ใหม่สำหรับคำแนะนำ
-
-        # สร้าง Label แบบปกติ และจัดวางไว้ด้านบน
-        self.label = ttk.Label(self, text="สวัสดีครับ  นักลงทุน", font=self.custom_font, anchor="center")
-        self.label.pack(pady=(10, 5)) # เพิ่มระยะห่างด้านบนและล่าง
-
-        # เพิ่ม Label แถวที่สองสำหรับคำแนะนำ
-        self.instruction_label = ttk.Label(
-            self,
-            text="กรุณาเลือก เมนู การทำงานที่เมนูบาร์ เพื่อ\nสร้างไฟล์ฐานข้อมูลใหม่ หรือ เปิดฐานข้อมูลที่มีอยู่แล้วครับ",
-            font=self.instruction_font,
-            anchor="center",
-            justify=tk.CENTER # เพิ่ม justify เพื่อจัดกึ่งกลางข้อความหลายบรรทัด
-        )
-        self.instruction_label.pack(pady=(0, 15)) # เพิ่มระยะห่างด้านล่างก่อนถึงปุ่ม
-
-        # --- สร้างปุ่ม "ออกจากโปรแกรม" ที่หน้าแรก ---
-        button_width = 150
-        button_height = 50
-        window_width = 500
-        window_height = 300
-
-        # คำนวณตำแหน่งเพื่อจัดกึ่งกลาง และห่างจากขอบล่าง 20 pixels
-        x_pos = 30
-        y_pos = (window_height - button_height - 20)
-
-        tooltip_text = "คลิกเพื่อออกจากโปรแกรม"
-
-        self.exit_button = ttk.Button(
-            self,
-            text="ออกจากโปรแกรม",
-            command=self.on_close
-        )
-        self.exit_button.place(x=x_pos, y=y_pos, width=button_width, height=button_height)
-        self.exit_button.bind("<Enter>", lambda event: self._update_statusbar(tooltip_text))
-        self.exit_button.bind("<Leave>", lambda event: self._update_statusbar("Ready"))
 
     def _create_transaction_buttons(self):
         """สร้าง Canvas และปุ่มสำหรับจัดการข้อมูลหลังจากเปิดฐานข้อมูล"""
@@ -276,26 +142,26 @@ class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น 
 
     # --- (เพิ่ม) ฟังก์ชันสำหรับเปิดหน้าต่างย่อยๆ ---
     def open_transaction_window(self):
-        trans_win = Tran_app(parent=self, db_path=self.db_manager.db_path)
+        trans_win = Tran_app(parent=self, db_path=self.selected_file)
         trans_win.grab_set()
 
     def open_stock_analyze_window(self):
-        analyze_win = StockAnalyzeApp(parent=self, db_path=self.db_manager.db_path)
+        analyze_win = StockAnalyzeApp(parent=self, db_path=self.selected_file)
         analyze_win.grab_set()
 
     def open_single_stock_analyze_window(self):
         # (แก้ไข) สร้างเป็น Toplevel และส่งข้อมูลที่จำเป็นไปให้
         single_analyze_win = Single_Stock_Analyzer_app(parent=self,
-                                                       db_path=self.db_manager.db_path,
+                                                       db_path=self.selected_file,
                                                        door_icon=self.door_icon)
         single_analyze_win.grab_set()
 
     def open_stock_log_window(self):
-        log_win = StockLogApp(parent=self, db_path=self.db_manager.db_path)
+        log_win = StockLogApp(parent=self, db_path=self.selected_file)
         log_win.grab_set()
 
     def open_dividend_return_window(self):
-        div_win = DividendReturnApp(parent=self, db_path=self.db_manager.db_path)
+        div_win = DividendReturnApp(parent=self, db_path=self.selected_file)
         div_win.grab_set()
     
 if __name__ == "__main__":
