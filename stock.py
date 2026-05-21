@@ -1,6 +1,9 @@
 import tkinter as tk
 from tkinter import ttk
-from tkinter import font as tkfont, messagebox
+from tkinter import font as tkfont, messagebox,filedialog  
+from pathlib import Path    
+from find_saved_datafile_path import FindSavedDatafilePath
+ 
 import sys # เพิ่ม sys
 import os
 import chmodule
@@ -22,41 +25,49 @@ except ImportError:
 from managedatabase import Appdb # Import Appdb เพื่อเรียกใช้ฟังก์ชัน
 
 class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น tk.Toplevel
-    def __init__(self, parent, display_image, door_icon, db_manager): # <-- เพิ่ม db_manager
-        super().__init__(parent) # <-- ส่ง parent ไปให้ super class
-        self.parent = parent # เก็บ parent ไว้
-        self.withdraw() 
+    def __init__(self, parent, display_image=None, door_icon=None):
+        super().__init__(parent)
+        parent.self = parent
         self.title("Stock window")
-        self.recent_db_file = chmodule.ChClass.get_resource_path('recent_db.txt')
 
-        # --- (แก้ไข) รับอ็อบเจกต์รูปภาพมาโดยตรง ไม่ต้องโหลดใหม่ ---
-        self.iconphoto(True, parent.icon_image) # ใช้ไอคอนเดียวกับหน้าต่างหลัก
-        self.display_image = display_image
-        self.door_icon = door_icon
+        # เรียก dialog หลังจาก window สร้างเสร็จ
+        self.after(100, self.open_file_dialog)
 
-        # --- (แก้ไข) รับ db_manager มาจาก main.py ---
-        self.db_manager = db_manager
-        self.db_manager.on_open_success_callback = self.on_database_opened # ตั้งค่า callback ใหม่ทุกครั้ง
-        chmodule.ChClass.setwindowcenter(self, 500, 400)
-        self.status_bar = chmodule.ChClass.status_bar("Ready", self)
-        self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
 
-        self.deiconify() # แสดงหน้าต่างหลักเพื่อใช้เป็น parent ของ dialog เลือกไฟล์
-        self._force_select_database()
-        # เมื่อหน้าต่างหลักนี้ปิด ให้ปิดหน้าต่าง db_manager ที่ซ่อนอยู่ด้วย
-        self.protocol("WM_DELETE_WINDOW", self.on_close)
-        
+    def open_file_dialog(self):
+        from tkinter import filedialog, messagebox
+        from pathlib import Path
+        from find_saved_datafile_path import FindSavedDatafilePath
+
+        finder = FindSavedDatafilePath()
+
+        folder_path = finder.get_pythonista_icloud_path()
+
+        print("กำลังเปิด dialog เลือกไฟล์...")
+        print(f"Debug: กำลังตรวจสอบ Path: {folder_path}")
+        if not Path(folder_path).exists():
+            print("Warning: Path ที่ระบุไม่มีอยู่จริง เปลี่ยนไปใช้ Directory ปัจจุบันแทน")
+            folder_path = "."
+        filename = filedialog.askopenfilename(
+            parent=self,   # ใช้ root Tk เป็น parent
+            initialdir=folder_path,
+            title="เลือกไฟล์ Stock",
+            filetypes=[("Stock files", "stock*.*")]
+        )
+        print("ผลลัพธ์ filename =", filename)
+
+        if filename:
+            self.selected_file = Path(filename)
+            print("เลือกไฟล์:", self.selected_file)
+        else:
+            messagebox.showinfo("ยังไม่ได้เลือกไฟล์", "คุณยังไม่ได้เลือกไฟล์ฐานข้อมูล", parent=self)
+            self.on_close()
 
     def on_close(self):
-        self.parent.deiconify() # แสดงหน้าต่างหลักอีกครั้ง
-        self.destroy() # ปิดแค่หน้าต่างนี้
+        self.parent.deiconify()
+        self.destroy()
 
-    def _force_select_database(self):
-        """บังคับให้ผู้ใช้เลือกไฟล์ฐานข้อมูลก่อนเริ่มใช้งาน"""
-        self.db_manager.open_database("stock")
-        if not getattr(self.db_manager, "db_path", None):
-            messagebox.showinfo("ยังไม่ได้เลือกไฟล์", "ยังไม่ได้เลือกไฟล์ฐานข้อมูล โปรแกรมจะกลับไปหน้าหลัก", parent=self)
-            self.on_close()
+
 
 
 
@@ -91,47 +102,7 @@ class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น 
         if new_db_path: # ตรวจสอบว่าผู้ใช้ไม่ได้กดยกเลิก
             self.on_database_opened(new_db_path)
         
-    def on_database_opened(self, db_path):
-        """Callback function ที่จะถูกเรียกโดย Appdb เมื่อเปิดไฟล์สำเร็จ"""
-        self.db_manager.db_path = db_path # <--- จุดแก้ไขสำคัญ: เก็บ path ไว้ใน db_manager
-        # --- บันทึกไฟล์ที่เปิดล่าสุด ---
-        try:
-            with open(self.recent_db_file, 'w') as f:
-                f.write(db_path)
-        except IOError as e:
-            print(f"ไม่สามารถบันทึกไฟล์ล่าสุดได้: {e}")
-        import os
 
-        # ล้าง widget เก่าของหน้าจอเริ่มต้น (ถ้ามี)
-        # ใช้ hasattr เพื่อตรวจสอบว่า widget ถูกสร้างขึ้นแล้วหรือยัง
-        if hasattr(self, 'label') and self.label.winfo_exists():
-            self.label.pack_forget()
-        if hasattr(self, 'instruction_label') and self.instruction_label.winfo_exists():
-            self.instruction_label.pack_forget()
-        if hasattr(self, 'exit_button') and self.exit_button.winfo_exists():
-            self.exit_button.place_forget()
-
-        # ล้าง widget เก่าในหน้าต่าง ยกเว้น status bar
-        for widget in self.winfo_children():
-            if widget is self.status_bar.master: # ถ้าเป็น Frame ของ status bar ให้ข้ามไป
-                continue
-            widget.destroy()
-
-        # --- (เพิ่ม) Label แสดงชื่อไฟล์ที่กำลังเปิด ---
-        db_name = os.path.basename(db_path)
-        self.opened_file_label = ttk.Label(self, text=f"ไฟล์ที่เปิดอยู่: {db_name}", font=("Helvetica", 10, "italic"), anchor="center")
-        self.opened_file_label.pack(pady=(5, 0), fill=tk.X)
-
-        # --- (เพิ่ม) ข้อความแจ้งเตือนปี 2569 ---
-        self.year_notice_label = ttk.Label(self, text="เงินปันผล และกำไร/ขาดทุน  คิดเฉพาะปี 2569", font=("Helvetica", 10, "bold"), foreground="red", anchor="center")
-        self.year_notice_label.pack(pady=(0, 5), fill=tk.X)
-
-        # สร้างหน้าจอสำหรับจัดการธุรกรรม
-        self._create_transaction_buttons()
-        self.db_manager.withdraw()
-        self.deiconify()
-        self.attributes('-topmost', True) # ทำให้หน้าต่างนี้อยู่บนสุด
-        self.attributes('-topmost', False) # ยกเลิกการอยู่บนสุดเพื่อให้หน้าต่างอื่นทำงานได้
 
     def reset_to_initial_state(self):
         """ล้างหน้าจอและวิดเจ็ตทั้งหมด กลับไปที่หน้าจอเริ่มต้น"""
