@@ -199,52 +199,7 @@ class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น 
             temp_manager = TempDbManager(self.selected_file)
             WaitingListDialog(self, temp_manager) # หน้าต่าง dialog เป็นแบบ Modal และจะบล็อกจนกว่าจะถูกปิด
 
-    def reset_to_initial_state(self):
-        """ล้างหน้าจอและวิดเจ็ตทั้งหมด กลับไปที่หน้าจอเริ่มต้น"""
-        # ล้างวิดเจ็ตทั้งหมด ยกเว้น status bar
-        for widget in self.winfo_children():
-            if widget is self.status_bar.master:
-                continue
-            widget.destroy()
-        
-        # ล้างค่า db_path ที่เก็บไว้
-        self.db_manager.db_path = None
-        try:
-            # ล้างไฟล์ที่เก็บบันทึกไฟล์ล่าสุด
-            if os.path.exists(self.recent_db_file):
-                os.remove(self.recent_db_file)
-        except Exception as e:
-            print(f"ไม่สามารถลบไฟล์ recent_db.txt ได้: {e}")
 
-        self.create_widgets() # สร้างหน้าจอเริ่มต้นขึ้นมาใหม่
-
-    def open_recent_database(self):
-        """อ่านพาธจากไฟล์ config และเปิดฐานข้อมูลล่าสุด"""
-        try:
-            if not os.path.exists(self.recent_db_file):
-                messagebox.showwarning("ไม่พบไฟล์ล่าสุด", "ยังไม่มีประวัติการเปิดไฟล์ฐานข้อมูลล่าสุด")
-                return
-
-            with open(self.recent_db_file, 'r') as f:
-                db_path = f.read().strip()
-
-            if not db_path:
-                messagebox.showwarning("ไม่พบไฟล์ล่าสุด", "ประวัติการเปิดไฟล์ล่าสุดว่างเปล่า")
-                return
-
-            if not os.path.exists(db_path):
-                messagebox.showerror("เกิดข้อผิดพลาด", f"ไม่พบไฟล์ฐานข้อมูลที่:\n{db_path}\nไฟล์อาจถูกย้ายหรือลบไปแล้ว")
-                return
-
-            # ตรวจสอบความถูกต้องของไฟล์ก่อนเปิด
-            is_valid, error_message = self.db_manager._is_schema_valid(db_path)
-            if is_valid:
-                self.on_database_opened(db_path)
-            else:
-                messagebox.showerror("ไฟล์ไม่ถูกต้อง", f"โครงสร้างของไฟล์ '{os.path.basename(db_path)}' ไม่ถูกต้อง\n\n{error_message}")
-
-        except Exception as e:
-            messagebox.showerror("เกิดข้อผิดพลาด", f"ไม่สามารถเปิดไฟล์ล่าสุดได้: {e}")
 
     def create_widgets(self):
         
@@ -347,27 +302,28 @@ class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น 
     # --- (เพิ่ม) ฟังก์ชันสำหรับเปิดหน้าต่างย่อยๆ ---
     def open_transaction_window(self):
 
-        trans_win = Tran_app(parent=self, db_path=self.db_manager.db_path)
+        trans_win = Tran_app(parent=self, db_path=self.selected_file)
         trans_win.grab_set()
     
 
     def open_stock_analyze_window(self):
-        analyze_win = StockAnalyzeApp(parent=self, db_path=self.db_manager.db_path)
+
+        analyze_win = StockAnalyzeApp(parent=self, db_path=self.selected_file)
         analyze_win.grab_set()
 
     def open_single_stock_analyze_window(self):
         # (แก้ไข) สร้างเป็น Toplevel และส่งข้อมูลที่จำเป็นไปให้
         single_analyze_win = Single_Stock_Analyzer_app(parent=self,
-                                                       db_path=self.db_manager.db_path,
+                                                       db_path=self.selected_file,
                                                        door_icon=self.door_icon)
-        single_analyze_win.grab_set()
+        single_analyze_win.grab_set()           
 
     def open_stock_log_window(self):
-        log_win = StockLogApp(parent=self, db_path=self.db_manager.db_path)
+        log_win = StockLogApp(parent=self, db_path=self.selected_file)
         log_win.grab_set()
 
     def open_dividend_return_window(self):
-        div_win = DividendReturnApp(parent=self, db_path=self.db_manager.db_path)
+        div_win = DividendReturnApp(parent=self, db_path=self.selected_file)
         div_win.grab_set()
     
 if __name__ == "__main__":

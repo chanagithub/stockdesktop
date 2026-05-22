@@ -22,10 +22,8 @@ class Tran_app(tk.Toplevel):
             self.iconphoto(True, self.icon_image)
         except tk.TclError:
             print("ไม่พบไฟล์ไอคอน 'fund.png' ใน transaction.py")
-        
-        #center windows
-        # --- ขยายขนาดหน้าต่างเพื่อให้มีพื้นที่สำหรับแท็บและจัดกึ่งกลาง ---
-        chmodule.ChClass.setwindowcenter(self, 800, 700) # ใช้ขนาด 800x700 ตามที่เคยกำหนด
+       # --- เปลี่ยนจากการตั้งค่าขนาดตายตัว เป็นการขยายเต็มจอ ---
+        self.state('zoomed')
         self.status_bar = chmodule.ChClass.status_bar("Ready", self)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
         # self.geometry("800x700") # ลบออกเนื่องจาก setwindowcenter จัดการแล้ว

@@ -7,6 +7,7 @@ except ImportError:
     Image = None
 import os
 import chmodule
+import config
 
 # --- Import คลาสหน้าต่างย่อย ---
 from stock import App as StockApp
@@ -17,11 +18,14 @@ from managedatabase import Appdb as ManageDbApp
 class App(tk.Tk):
     def __init__(self):
         super().__init__()
+        # 1. เรียกใช้งานฟังก์ชันตั้งค่าฟอนต์ที่นี่ (หลังจาก super().__init__)
+        config.setup_global_fonts()
 
-        # ตั้งฟอนต์ตาม OS
+        # 2. หลังจากตั้งค่า Global แล้ว คุณค่อยสร้างฟอนต์เฉพาะตัวที่ต้องการใช้ในแอป
         base = tkfont.nametofont("TkDefaultFont")
         self.font_title = base.copy()
         self.font_title.configure(size=12, weight="bold")
+        
         self.font_normal = base.copy()
         self.font_normal.configure(size=10)
 
