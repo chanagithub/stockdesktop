@@ -125,8 +125,8 @@ class App(tk.Tk):
     def open_funds_window(self):
         funds_win = FundsApp(parent=self,
                              display_image=self.fund_image,
-                             door_icon=self.door_icon,
-                             db_manager=self.db_manager)
+                             door_icon=self.door_icon
+                            )
         self.withdraw()
         funds_win.protocol("WM_DELETE_WINDOW", lambda: (funds_win.on_close(), self.deiconify()))
 

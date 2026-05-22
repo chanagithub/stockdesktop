@@ -4,6 +4,7 @@ from tkinter import font as tkfont, messagebox
 import sys # เพิ่ม sys
 import os
 import chmodule # Import AppcreateDB เพื่อเรียกใช้ฟังก์ชัน
+import sqlite3
 
 # --- (แก้ไข) Import คลาสของหน้าต่างย่อยๆ ---
 from transaction_for_funds import Tran_app # เปลี่ยนไปใช้ Tran_app จาก transaction_for_funds.py
@@ -22,10 +23,10 @@ except ImportError:
 
 
 class WaitingListDialog(tk.Toplevel):
-    def __init__(self, parent, db_manager):
+    def __init__(self, parent, db_path):
         super().__init__(parent)
         self.title("รายการรอดำเนินการ")
-        self.db_manager = db_manager
+        self.db_path = db_path
         chmodule.ChClass.setwindowcenter(self, 600, 350)
         
         self.create_widgets()
@@ -63,151 +64,140 @@ class WaitingListDialog(tk.Toplevel):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
+        temp_db_manager = TempDbManager(self.db_path)
+
         try:
-            lots_records = self.db_manager.fetch_all("SELECT symbol, volume, price_per_unit, date FROM waiting_lots WHERE status = 'BUY_WAITING'")
+            lots_records = temp_db_manager.fetch_all("SELECT symbol, volume, price_per_unit, date FROM waiting_lots WHERE status = 'BUY_WAITING'")
             for record in lots_records:
                 self.tree.insert("", tk.END, values=("ซื้อรอ", record[0], record[1], record[2], record[3]))
         except Exception as e:
             print(f"Warning: ไม่สามารถดึงข้อมูลจาก waiting_lots ได้: {e}")
 
         try:
-            sales_records = self.db_manager.fetch_all("SELECT symbol, volume, price_per_unit, date FROM waiting_lots WHERE status = 'SELL_WAITING'")
+            sales_records = temp_db_manager.fetch_all("SELECT symbol, volume, price_per_unit, date FROM waiting_lots WHERE status = 'SELL_WAITING'")
             for record in sales_records:
                 self.tree.insert("", tk.END, values=("ขายรอ", record[0], record[1], record[2], record[3]))
         except Exception as e:
             print(f"Warning: ไม่สามารถดึงข้อมูลจาก waiting_lots ได้: {e}")
 
+class TempDbManager:
+    def __init__(self, db_path):
+        self.db_path = db_path
     
+    def fetch_all(self, query):
+        """สำหรับดึงข้อมูลหลายแถว"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(query)
+        result = cursor.fetchall()
+        conn.close()
+        return result
+
+    def fetch_one(self, query):
+        """สำหรับดึงข้อมูลแถวเดียว"""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute(query)
+        result = cursor.fetchone()
+        conn.close()
+        return result   
 
 class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น tk.Toplevel
-    def __init__(self, parent, display_image, door_icon, db_manager): # <-- เพิ่ม db_manager
-        super().__init__(parent) # <-- ส่ง parent ไปให้ super class  
-        self.parent = parent # เก็บ parent ไว้
-        self.withdraw() 
-        self.title("Funds window")
-        self.recent_db_file = chmodule.ChClass.get_resource_path('recent_db.txt')
+    def __init__(self, parent, display_image, door_icon): 
+        super().__init__(parent)
+        self.parent = parent
+        self.title("Stock window")
 
-        # --- (แก้ไข) รับอ็อบเจกต์รูปภาพมาโดยตรง ไม่ต้องโหลดใหม่ ---
+         # --- (แก้ไข) รับอ็อบเจกต์รูปภาพมาโดยตรง ไม่ต้องโหลดใหม่ ---
         self.iconphoto(True, parent.icon_image) # ใช้ไอคอนเดียวกับหน้าต่างหลัก
         self.display_image = display_image
         self.door_icon = door_icon
 
-        # --- (แก้ไข) รับ db_manager มาจาก main.py ---
-        self.db_manager = db_manager
-        self.db_manager.on_open_success_callback = self.on_database_opened # ตั้งค่า callback ใหม่ทุกครั้ง
-
         chmodule.ChClass.setwindowcenter(self, 500, 320)
         self.status_bar = chmodule.ChClass.status_bar("Ready", self)
         self.status_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        
 
-        self.deiconify() # แสดงหน้าต่างหลักเพื่อใช้เป็น parent ของ dialog เลือกไฟล์
-        self._force_select_database()
-        # เมื่อหน้าต่างหลักนี้ปิด ให้ปิดหน้าต่าง db_manager ที่ซ่อนอยู่ด้วย
-        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        # เรียก dialog หลังจาก window สร้างเสร็จ
+        self.after(100, self.open_file_dialog)
+        self._create_transaction_buttons() # สร้างปุ่มต่าง ๆ หลังจากเปิด dialog แล้ว
+        self.deiconify() # แสดงหน้าต่างนี้หลังจากสร้างปุ่มต่าง ๆ เสร็จแล้ว
+
+    def open_file_dialog(self):
+        from tkinter import filedialog, messagebox
+        from pathlib import Path
+        from find_saved_datafile_path import FindSavedDatafilePath
+
+        finder = FindSavedDatafilePath()
+
+        folder_path = finder.get_pythonista_icloud_path()
+
+        print("กำลังเปิด dialog เลือกไฟล์...")
+        print(f"Debug: กำลังตรวจสอบ Path: {folder_path}")
+        if not Path(folder_path).exists():
+            print("Warning: Path ที่ระบุไม่มีอยู่จริง เปลี่ยนไปใช้ Directory ปัจจุบันแทน")
+            folder_path = "."
+        filename = filedialog.askopenfilename(
+            parent=self,   # ใช้ root Tk เป็น parent
+            initialdir=folder_path,
+            title="เลือกไฟล์ Stock",
+            filetypes=[("Stock files", "fund*.db")]
+        )
+        print("ผลลัพธ์ filename =", filename)
+
+        if filename:
+            self.selected_file = Path(filename)
+            print("เลือกไฟล์:", self.selected_file)
+        else:
+            messagebox.showinfo("ยังไม่ได้เลือกไฟล์", "คุณยังไม่ได้เลือกไฟล์ฐานข้อมูล", parent=self)
+            self.on_close()
+
+    # ในคลาสของคุณใน funds.py
+    def get_db_data(self, query):
+        if not self.selected_file:
+            return None
+        
+        # 1. เชื่อมต่อไปยังไฟล์ที่เลือก
+        conn = sqlite3.connect(self.selected_file)
+        cursor = conn.cursor()
+        
+        # 2. รันคำสั่ง
+        cursor.execute(query)
+        result = cursor.fetchone()
+        
+        # 3. ปิดการเชื่อมต่อ
+        conn.close()
+        
+        return result
         
 
     def on_close(self):
         self.parent.deiconify() # แสดงหน้าต่างหลักอีกครั้ง
         self.destroy() # ปิดแค่หน้าต่างนี้
-
-    def _force_select_database(self):
-        """บังคับให้ผู้ใช้เลือกไฟล์ฐานข้อมูลก่อนเริ่มใช้งาน"""
-        self.db_manager.open_database("fund")
-        if not getattr(self.db_manager, "db_path", None):
-            messagebox.showinfo("ยังไม่ได้เลือกไฟล์", "ยังไม่ได้เลือกไฟล์ฐานข้อมูล โปรแกรมจะกลับไปหน้าหลัก", parent=self)
-            self.on_close()
-
-
-
-    def _confirm_and_reset(self, action_name):
-        """ถามยืนยันผู้ใช้ก่อนรีเซ็ตหน้าจอ หากมีฐานข้อมูลเปิดอยู่"""
-        if hasattr(self.db_manager, 'db_path') and self.db_manager.db_path:
-            msg = f"คุณกำลังเปิดฐานข้อมูล '{os.path.basename(self.db_manager.db_path)}' อยู่\n\n" \
-                  f"การ{action_name}จะปิดไฟล์ปัจจุบันและกลับสู่หน้าจอเริ่มต้น\n" \
-                  "คุณต้องการดำเนินการต่อหรือไม่?"
-            if not messagebox.askyesno("ยืนยันการดำเนินการ", msg, parent=self):
-                return False
         
-        self.reset_to_initial_state()
-        return True
-
-    def _prompt_create_new_db(self):
-        if self._confirm_and_reset("สร้างฐานข้อมูลใหม่"):
-            self.create_stock_database()
-
-    def _prompt_open_db(self):
-        if self._confirm_and_reset("เปิดไฟล์ฐานข้อมูล"):
-            self.db_manager.open_database("fund")
-
-    def create_stock_database(self):
-        """
-        แก้ไข: เรียกใช้ create_database และส่ง path ของไฟล์ที่สร้างใหม่
-        กลับมาที่ on_database_opened เพื่อจัดการหน้าต่างอย่างถูกต้อง
-        """
-        new_db_path = self.db_manager.create_database("fund")
-        if new_db_path: # ตรวจสอบว่าผู้ใช้ไม่ได้กดยกเลิก
-            self.on_database_opened(new_db_path)
-        
-    def on_database_opened(self, db_path):
-        """Callback function ที่จะถูกเรียกโดย Appdb เมื่อเปิดไฟล์สำเร็จ"""
-        self.db_manager.db_path = db_path # <--- จุดแก้ไขสำคัญ: เก็บ path ไว้ใน db_manager
-        # --- บันทึกไฟล์ที่เปิดล่าสุด ---
-        try:
-            with open(self.recent_db_file, 'w') as f:
-                f.write(db_path)
-        except IOError as e:
-            print(f"ไม่สามารถบันทึกไฟล์ล่าสุดได้: {e}")
-
-        # ล้าง widget เก่าของหน้าจอเริ่มต้น (ถ้ามี)
-        # ใช้ hasattr เพื่อตรวจสอบว่า widget ถูกสร้างขึ้นแล้วหรือยัง
-        if hasattr(self, 'label') and self.label.winfo_exists():
-            self.label.pack_forget()
-        if hasattr(self, 'instruction_label') and self.instruction_label.winfo_exists():
-            self.instruction_label.pack_forget()
-        if hasattr(self, 'exit_button') and self.exit_button.winfo_exists():
-            self.exit_button.place_forget()
-
-        # ล้าง widget เก่าในหน้าต่าง ยกเว้น status bar
-        for widget in self.winfo_children():
-            if widget is self.status_bar.master: # ถ้าเป็น Frame ของ status bar ให้ข้ามไป
-                continue
-            widget.destroy()
-
-        # --- (เพิ่ม) Label แสดงชื่อไฟล์ที่กำลังเปิด ---
-        db_name = os.path.basename(db_path)
-        self.opened_file_label = ttk.Label(self, text=f"ไฟล์ที่เปิดอยู่: {db_name}", font=("Helvetica", 10, "italic"), anchor="center")
-        self.opened_file_label.pack(pady=(5, 0), fill=tk.X)
-
-        # สร้างหน้าจอสำหรับจัดการธุรกรรม
-        self._create_transaction_buttons()
-        self.deiconify()
-
-        # NEW: ตรวจสอบและแสดงรายการที่รอดำเนินการหลังจากเปิดฐานข้อมูล
-        self._check_and_display_pending_records()
-
-        self.attributes('-topmost', True) # ทำให้หน้าต่างนี้อยู่บนสุด
-        self.attributes('-topmost', False) # ยกเลิกการอยู่บนสุดเพื่อให้หน้าต่างอื่นทำงานได้
 
     def _check_and_display_pending_records(self):
         """ตรวจสอบรายการที่รอดำเนินการใน waiting_lots และ waiting_lots และแสดงหน้าต่าง dialog หากพบ"""
         has_pending = False
         try:
             # สมมติว่า db_manager มีเมธอด fetch_one ที่รับ SQL และคืนค่าแถวเดียว/tuple
-            lots_count = self.db_manager.fetch_one("SELECT COUNT(*) FROM waiting_lots")[0]
+            lots_count = self.get_db_data("SELECT COUNT(*) FROM waiting_lots")[0]
             if lots_count > 0:
                 has_pending = True
         except Exception as e:
             print(f"Warning: ไม่สามารถตรวจสอบตาราง waiting_lots ได้ (ตารางอาจยังไม่มี): {e}")
 
         try:
-            sales_count = self.db_manager.fetch_one("SELECT COUNT(*) FROM waiting_lots")[0]
+            sales_count = self.get_db_data("SELECT COUNT(*) FROM waiting_lots")[0]
             if sales_count > 0:
                 has_pending = True
         except Exception as e:
             print(f"Warning: ไม่สามารถตรวจสอบตาราง waiting_lots ได้ (ตารางอาจยังไม่มี): {e}")
 
         if has_pending:
-            WaitingListDialog(self, self.db_manager) # หน้าต่าง dialog เป็นแบบ Modal และจะบล็อกจนกว่าจะถูกปิด
+            temp_manager = TempDbManager(self.selected_file)
+            WaitingListDialog(self, temp_manager) # หน้าต่าง dialog เป็นแบบ Modal และจะบล็อกจนกว่าจะถูกปิด
 
     def reset_to_initial_state(self):
         """ล้างหน้าจอและวิดเจ็ตทั้งหมด กลับไปที่หน้าจอเริ่มต้น"""
@@ -227,31 +217,6 @@ class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น 
             print(f"ไม่สามารถลบไฟล์ recent_db.txt ได้: {e}")
 
         self.create_widgets() # สร้างหน้าจอเริ่มต้นขึ้นมาใหม่
-
-    def _try_open_recent_on_startup(self):
-        """
-        พยายามเปิดไฟล์ฐานข้อมูลล่าสุดเมื่อโปรแกรมเริ่มทำงาน
-        คืนค่า True หากสำเร็จ, False หากล้มเหลว (เพื่อให้แสดงหน้าจอเริ่มต้น)
-        """
-        try:
-            if not os.path.exists(self.recent_db_file):
-                return False
-
-            with open(self.recent_db_file, 'r') as f:
-                db_path = f.read().strip()
-
-            if not db_path or not os.path.exists(db_path):
-                return False
-
-            # ตรวจสอบความถูกต้องของไฟล์ก่อนเปิด
-            is_valid, _ = self.db_manager._is_schema_valid(db_path)
-            if is_valid:
-                self.on_database_opened(db_path)
-                return True
-            else:
-                return False
-        except Exception:
-            return False # หากมีข้อผิดพลาดใดๆ ให้กลับไปหน้าจอเริ่มต้น
 
     def open_recent_database(self):
         """อ่านพาธจากไฟล์ config และเปิดฐานข้อมูลล่าสุด"""

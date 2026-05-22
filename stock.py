@@ -67,7 +67,7 @@ class App(tk.Toplevel): # <-- เปลี่ยนจาก tk.Tk เป็น 
             parent=self,   # ใช้ root Tk เป็น parent
             initialdir=folder_path,
             title="เลือกไฟล์ Stock",
-            filetypes=[("Stock files", "stock*.*")]
+            filetypes=[("Stock files", "stock*.db")]
         )
         print("ผลลัพธ์ filename =", filename)
 
