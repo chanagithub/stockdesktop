@@ -597,7 +597,7 @@ class Tran_app(tk.Toplevel):
                     new_lot_number = self._generate_split_lot_number(cursor, original_lot['lot_number'])
                     cursor.execute("""
                         INSERT INTO lots (symbol, lot_number, status, buy_date, buy_volume, buy_price_per_unit, buy_commission, remaining_volume)
-                        VALUES (?, ?, 'CLOSE', ?, ?, ?, ?, 0)
+                        VALUES (?, ?, 'CLOSED', ?, ?, ?, ?, 0)
                     """, (
                         original_lot['symbol'], new_lot_number, original_lot['buy_date'],
                         sell_vol, original_lot['buy_price_per_unit'],
@@ -642,8 +642,8 @@ class Tran_app(tk.Toplevel):
                         VALUES (?, ?, ?, ?, ?)
                     """, (original_lot['lot_number'], sell_date, sell_vol, sell_price, assigned_tax))
 
-                    # 2. อัปเดตสถานะ Lot เดิมเป็น CLOSE
-                    cursor.execute("UPDATE lots SET remaining_volume = 0, status = 'CLOSE' WHERE lot_id = ?", (original_lot_id,))
+                    # 2. อัปเดตสถานะ Lot เดิมเป็น CLOSED
+                    cursor.execute("UPDATE lots SET remaining_volume = 0, status = 'CLOSED' WHERE lot_id = ?", (original_lot_id,))
 
             conn.commit()  # ยืนยัน Transaction
             messagebox.showinfo("สำเร็จ", "บันทึกการขายเรียบร้อยแล้ว", parent=self)
@@ -677,7 +677,7 @@ class Tran_app(tk.Toplevel):
                     if not row:
                         continue
                     new_remaining = row[0] - vol
-                    new_status = 'CLOSE' if new_remaining == 0 else 'OPEN'
+                    new_status = 'CLOSED' if new_remaining == 0 else 'OPEN'
                     cursor.execute("UPDATE lots SET remaining_volume = ?, status = ? WHERE lot_id = ?", (new_remaining, new_status, lid))
 
                 conn.commit()
