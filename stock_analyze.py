@@ -54,9 +54,6 @@ class StockAnalyzeApp(tk.Toplevel):
         # ผูกเหตุการณ์การเปลี่ยนแท็บกับฟังก์ชัน on_tab_changed
         self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
 
-        # ผูกเหตุการณ์การเปลี่ยนแท็บกับฟังก์ชัน on_tab_changed
-        self.notebook.bind("<<NotebookTabChanged>>", self.on_tab_changed)
-
         # ตั้งค่าสีเริ่มต้นสำหรับแท็บแรก
         self.on_tab_changed(None)
 
@@ -270,15 +267,16 @@ class StockAnalyzeApp(tk.Toplevel):
                         l.remaining_volume,
                         COALESCE(r.total_return, 0) AS total_return
                     FROM lots l
-                    LEFT JOIN ( -- แก้ไข: เปลี่ยนการ JOIN จาก lot_id เป็น lot_number
-                        SELECT lot_number, SUM(net_amount) as total_return
+                    LEFT JOIN (
+                        SELECT lot_id, SUM(net_amount) AS total_return
                         FROM (
-                            SELECT lot_id as lot_number, (amount - COALESCE(tax, 0)) as net_amount FROM dividends -- หักภาษีออกจากปันผล
-                            UNION ALL 
-                            SELECT lot_id as lot_number, amount as net_amount FROM capital_returns
+                            -- แก้ไข จุดที่ 1: ใช้ amount โดยตรง ไม่หัก tax ซ้ำ
+                            SELECT lot_id, amount AS net_amount FROM dividends
+                            UNION ALL
+                            SELECT lot_id, amount AS net_amount FROM capital_returns
                         )
-                        GROUP BY lot_number
-                    ) r ON l.lot_number = r.lot_number -- แก้ไข: เปลี่ยนเงื่อนไขการ JOIN เป็น lot_number
+                        GROUP BY lot_id
+                    ) r ON l.lot_number = r.lot_id
                     WHERE l.status = 'OPEN' AND l.remaining_volume > 0
                     ORDER BY l.symbol, l.buy_date;
                 """)
@@ -301,7 +299,7 @@ class StockAnalyzeApp(tk.Toplevel):
                     )
                     avg_price = total_cost_basis / total_volume if total_volume > 0 else 0
                     total_returns_for_symbol = sum(lot['total_return'] for lot in lots_list)
-                    # คำนวณราคาเฉลี่ยหลังหักปันผล
+                    # คำนวณราคาเฉลี่ยหลังหักปันผล+เงินคืน
                     avg_price_with_returns = (total_cost_basis - total_returns_for_symbol) / total_volume if total_volume > 0 else 0
 
                     parent_values = (
@@ -311,7 +309,7 @@ class StockAnalyzeApp(tk.Toplevel):
                         self._format_number(total_invested_amount),
                         self._format_number(total_cost_basis),
                         self._format_number(avg_price),
-                        self._format_number(avg_price_with_returns), # เพิ่มค่าสำหรับคอลัมน์ใหม่
+                        self._format_number(avg_price_with_returns),
                         self._format_number(total_returns_for_symbol),
                     )
                     parent_iid = self.open_lots_tree.insert('', tk.END, values=parent_values, open=False, tags=('parent_row',))
@@ -323,8 +321,6 @@ class StockAnalyzeApp(tk.Toplevel):
                     for lot in lots_list:
                         invested_amount_for_lot = (lot['buy_volume'] * lot['buy_price_per_unit']) + (lot['buy_commission'] or 0)
                         cost_basis_for_lot = (lot['remaining_volume'] / lot['buy_volume']) * invested_amount_for_lot if lot['buy_volume'] > 0 else 0
-                        # สำหรับแถวย่อย หัวคอลัมน์คือ "ราคาซื้อ/หน่วย" และ "เฉลี่ยรวมปันผล/หุ้น"
-                        # เราจะแสดงราคาซื้อ และเว้นว่างในช่องเฉลี่ยรวมปันผล
 
                         child_values = (
                             f"  └ {lot['lot_number']}",
@@ -332,8 +328,8 @@ class StockAnalyzeApp(tk.Toplevel):
                             self._format_number(lot['buy_volume'], is_float=False),
                             self._format_number(invested_amount_for_lot),
                             f"{self._format_number(lot['remaining_volume'], is_float=False)} ({self._format_number(cost_basis_for_lot)})",
-                            self._format_number(lot['buy_price_per_unit']), # ราคาซื้อ/หน่วย
-                            "", # เว้นว่างสำหรับคอลัมน์ใหม่ในแถวย่อย
+                            self._format_number(lot['buy_price_per_unit']),
+                            "",
                             self._format_number(lot['total_return'])
                         )
                         self.open_lots_tree.insert(parent_iid, tk.END, values=child_values, tags=('child_row',))
@@ -344,7 +340,7 @@ class StockAnalyzeApp(tk.Toplevel):
                         'ผลรวมทั้งหมด', '', '',
                         self._format_number(grand_total_invested),
                         self._format_number(grand_total_cost),
-                        '', '', # avg_price, avg_price_with_returns
+                        '', '',
                         self._format_number(grand_total_returns)
                     )
                     self.open_lots_tree.insert('', tk.END, values=grand_total_values, tags=('grand_total',))
@@ -354,7 +350,7 @@ class StockAnalyzeApp(tk.Toplevel):
 
     def load_closed_trades_data(self):
         """
-        แก้ไขใหม่: โหลดข้อมูล 'รายการขาย' (Sale Transactions) ทั้งหมดเพื่อแสดง Realized P/L
+        โหลดข้อมูล 'รายการขาย' (Sale Transactions) ทั้งหมดเพื่อแสดง Realized P/L
         โดยดึงข้อมูลจากตาราง sales เป็นหลัก แล้ว join กับ lots เพื่อหาต้นทุน
         """
         for item in self.closed_trades_tree.get_children():
@@ -377,19 +373,19 @@ class StockAnalyzeApp(tk.Toplevel):
                         l.buy_volume,
                         l.buy_price_per_unit,
                         l.buy_commission,
-                        COALESCE(r.total_return, 0) AS total_dividends_returns -- เพิ่มการดึงข้อมูลปันผล
+                        COALESCE(r.total_return, 0) AS total_dividends_returns
                     FROM sales s
-                    JOIN lots l ON s.lot_id = l.lot_number -- ใช้ lot_number ในการ Join
-                    -- เพิ่มการ Join เพื่อดึงข้อมูลปันผลและเงินคืนทุน
+                    JOIN lots l ON s.lot_id = l.lot_number
                     LEFT JOIN (
-                        SELECT lot_number, SUM(net_amount) as total_return
+                        SELECT lot_id, SUM(net_amount) AS total_return
                         FROM (
-                            SELECT lot_id as lot_number, (amount - COALESCE(tax, 0)) as net_amount FROM dividends -- หักภาษีออกจากปันผล
+                            -- แก้ไข จุดที่ 2: ใช้ amount โดยตรง ไม่หัก tax ซ้ำ
+                            SELECT lot_id, amount AS net_amount FROM dividends
                             UNION ALL
-                            SELECT lot_id as lot_number, amount as net_amount FROM capital_returns
+                            SELECT lot_id, amount AS net_amount FROM capital_returns
                         )
-                        GROUP BY lot_number
-                    ) r ON l.lot_number = r.lot_number
+                        GROUP BY lot_id
+                    ) r ON l.lot_number = r.lot_id
                     ORDER BY l.symbol, s.sell_date DESC;
                 """)
                 all_sales = cursor.fetchall()
@@ -402,11 +398,10 @@ class StockAnalyzeApp(tk.Toplevel):
                 grand_total_cost = 0
                 grand_total_sale = 0
                 grand_total_sale_pl = 0
-                grand_total_dividends = 0 # เพิ่มตัวแปรสำหรับรวมยอดปันผล
-                grand_total_pl = 0 # เพิ่มตัวแปรสำหรับรวมกำไรทั้งหมด
+                grand_total_dividends = 0
+                grand_total_pl = 0
 
                 for symbol, sales_list in grouped_sales.items():
-                    # ตัวแปรสำหรับรวมยอดของแต่ละหุ้น (Symbol Total)
                     sym_total_volume = 0
                     sym_total_cost = 0
                     sym_total_sale = 0
@@ -491,8 +486,8 @@ class StockAnalyzeApp(tk.Toplevel):
                         self._format_number(grand_total_cost),
                         self._format_number(grand_total_sale),
                         self._format_number(grand_total_sale_pl),
-                        self._format_number(grand_total_dividends), # แสดงปันผลรวม
-                        self._format_number(grand_total_pl) # แสดงกำไรรวมทั้งหมด
+                        self._format_number(grand_total_dividends),
+                        self._format_number(grand_total_pl)
                     )
                     tags = ('grand_total',) + self._get_profit_tags(grand_total_pl)
                     self.closed_trades_tree.insert('', tk.END, values=grand_total_values, tags=tags)
@@ -518,14 +513,16 @@ class StockAnalyzeApp(tk.Toplevel):
                         r.amount,
                         r.type
                     FROM (
-                        SELECT lot_id, payment_date, (amount - COALESCE(tax, 0)) as amount, 'dividend' as type FROM dividends -- หักภาษี
+                        -- แก้ไข จุดที่ 3: ใช้ amount โดยตรง ไม่หัก tax ซ้ำ
+                        SELECT lot_id, payment_date, amount, 'dividend' AS type FROM dividends
                         UNION ALL
-                        SELECT lot_id, payment_date, amount, 'return' as type FROM capital_returns
+                        SELECT lot_id, payment_date, amount, 'return' AS type FROM capital_returns
                     ) r
-                    JOIN lots l ON r.lot_id = l.lot_number -- แก้ไข Join เป็น lot_number ให้ตรงกับข้อมูลที่เก็บ
+                    JOIN lots l ON r.lot_id = l.lot_number
                     ORDER BY l.symbol, l.lot_number, r.payment_date;
                 """)
                 all_returns = cursor.fetchall()
+
                 grand_total_dividends = 0
                 grand_total_returns = 0
 
@@ -556,7 +553,6 @@ class StockAnalyzeApp(tk.Toplevel):
                         grouped_by_lot[record['lot_number']].append(record)
 
                     for lot_number, lot_records in grouped_by_lot.items():
-                        # แทรกข้อมูลของแต่ละรายการภายใต้ Symbol
                         for record in lot_records:
                             dividend_amount = record['amount'] if record['type'] == 'dividend' else 0
                             return_amount = record['amount'] if record['type'] == 'return' else 0
@@ -567,7 +563,7 @@ class StockAnalyzeApp(tk.Toplevel):
                                 record['payment_date'],
                                 self._format_number(dividend_amount) if dividend_amount else "",
                                 self._format_number(return_amount) if return_amount else "",
-                                self._format_number(record['amount']) # ยอดรวมของรายการนั้นๆ
+                                self._format_number(record['amount'])
                             )
                             self.returns_tree.insert(symbol_parent_iid, tk.END, values=child_values)
 
@@ -582,7 +578,7 @@ class StockAnalyzeApp(tk.Toplevel):
                     grand_total_parent_iid = self.returns_tree.insert('', tk.END, values=(), open=False, tags=('grand_total',))
                     grand_total_all = grand_total_dividends + grand_total_returns
                     grand_total_values = (
-                        'ผลรวมทั้งหมด', '', '', # symbol, lot_number, date
+                        'ผลรวมทั้งหมด', '', '',
                         self._format_number(grand_total_dividends),
                         self._format_number(grand_total_returns),
                         self._format_number(grand_total_all)
@@ -604,7 +600,7 @@ class StockAnalyzeApp(tk.Toplevel):
                         month_name = self._get_thai_month_name(month_key)
                         monthly_total = summary['dividends'] + summary['returns']
                         monthly_values = (
-                            f"  └ {month_name}", '', '', # symbol, lot_number, date
+                            f"  └ {month_name}", '', '',
                             self._format_number(summary['dividends']),
                             self._format_number(summary['returns']),
                             self._format_number(monthly_total)
@@ -621,7 +617,3 @@ if __name__ == "__main__":
         app.mainloop()
     else:
         print("Please provide the database path as a command-line argument.")
-
-
-
-  
