@@ -156,6 +156,8 @@ class StockAnalyzeApp(tk.Toplevel):
 
         # --- สร้าง Tags สำหรับ Style ---
         self.closed_trades_tree.tag_configure('parent_row', font=('Helvetica', 14))
+        # แท็กใหม่: แถวสรุปของ "วันที่ขาย" (ชั้นกลาง ระหว่างหุ้น กับ รายล็อต)
+        self.closed_trades_tree.tag_configure('date_row', font=('Helvetica', 11, 'italic'), background='#FFF0C6')
         self.closed_trades_tree.tag_configure('child_row', foreground='gray50')
         self.closed_trades_tree.tag_configure('grand_total', font=('Helvetica', 14, 'bold'), background="#CFCD96", foreground='blue')
         self.closed_trades_tree.tag_configure('profit', foreground='#000000')  # กำไรเป็นสีดำ   
@@ -204,6 +206,10 @@ class StockAnalyzeApp(tk.Toplevel):
         self.returns_tree.column('date', anchor=tk.CENTER)
 
         # --- สร้าง Tags ---
+        self.returns_tree.tag_configure('parent_row', font=('Helvetica', 14))
+        # แท็กใหม่: แถวสรุปของ "วันที่ได้รับเงิน" (ชั้นกลาง ระหว่างหุ้น กับ รายล็อต)
+        self.returns_tree.tag_configure('date_row', font=('Helvetica', 11, 'italic'), background='#FFE3B3')
+        self.returns_tree.tag_configure('child_row', foreground='gray50')
         self.returns_tree.tag_configure('grand_total', font=('Helvetica', 14, 'bold'), background="#CFCD96", foreground='blue')
 
         # --- สร้าง Scrollbars ---
@@ -351,7 +357,7 @@ class StockAnalyzeApp(tk.Toplevel):
     def load_closed_trades_data(self):
         """
         โหลดข้อมูล 'รายการขาย' (Sale Transactions) ทั้งหมดเพื่อแสดง Realized P/L
-        โดยดึงข้อมูลจากตาราง sales เป็นหลัก แล้ว join กับ lots เพื่อหาต้นทุน
+        โครงสร้าง Tree 3 ชั้น: หุ้น (symbol) -> วันที่ขาย (sell_date) -> รายละเอียดล็อตที่ขาย
         """
         for item in self.closed_trades_tree.get_children():
             self.closed_trades_tree.delete(item)
@@ -409,14 +415,26 @@ class StockAnalyzeApp(tk.Toplevel):
                     sym_total_dividends = 0
                     sym_total_pl = 0
 
-                    # รอบแรก: คำนวณยอดรวมของหุ้นตัวนี้
+                    # เตรียมค่าที่คำนวณแล้วของแต่ละรายการขาย (ใช้ร่วมกันทั้งตอนสรุปหุ้น/วันที่/รายล็อต)
+                    computed_sales = []
                     for sale in sales_list:
                         original_lot_cost = (sale['buy_volume'] * sale['buy_price_per_unit']) + (sale['buy_commission'] or 0)
                         cost_for_this_sale = (sale['sell_volume'] / sale['buy_volume']) * original_lot_cost if sale['buy_volume'] > 0 else 0
+                        cost_per_share = original_lot_cost / sale['buy_volume'] if sale['buy_volume'] > 0 else 0
                         sale_value_net = (sale['sell_volume'] * sale['sell_price_per_unit']) - (sale['sell_commission'] or 0)
                         dividends_for_this_sale = sale['total_dividends_returns']
                         sale_pl = sale_value_net - cost_for_this_sale
                         total_pl = sale_pl + dividends_for_this_sale
+
+                        computed_sales.append({
+                            'sale': sale,
+                            'cost': cost_for_this_sale,
+                            'cost_per_share': cost_per_share,
+                            'sale_value_net': sale_value_net,
+                            'dividends': dividends_for_this_sale,
+                            'sale_pl': sale_pl,
+                            'total_pl': total_pl,
+                        })
 
                         sym_total_volume += sale['sell_volume']
                         sym_total_cost += cost_for_this_sale
@@ -425,7 +443,7 @@ class StockAnalyzeApp(tk.Toplevel):
                         sym_total_dividends += dividends_for_this_sale
                         sym_total_pl += total_pl
 
-                    # คำนวณค่าเฉลี่ย
+                    # คำนวณค่าเฉลี่ยของหุ้น
                     sym_avg_cost = sym_total_cost / sym_total_volume if sym_total_volume > 0 else 0
                     sym_avg_sell = sym_total_sale / sym_total_volume if sym_total_volume > 0 else 0
 
@@ -452,30 +470,57 @@ class StockAnalyzeApp(tk.Toplevel):
                     grand_total_dividends += sym_total_dividends
                     grand_total_pl += sym_total_pl
 
-                    # รอบสอง: เพิ่มแถว Child (รายละเอียดแต่ละรายการขาย)
-                    for sale in sales_list:
-                        original_lot_cost = (sale['buy_volume'] * sale['buy_price_per_unit']) + (sale['buy_commission'] or 0)
-                        cost_for_this_sale = (sale['sell_volume'] / sale['buy_volume']) * original_lot_cost if sale['buy_volume'] > 0 else 0
-                        cost_per_share = original_lot_cost / sale['buy_volume'] if sale['buy_volume'] > 0 else 0
-                        sale_value_net = (sale['sell_volume'] * sale['sell_price_per_unit']) - (sale['sell_commission'] or 0)
-                        dividends_for_this_sale = sale['total_dividends_returns']
-                        sale_pl = sale_value_net - cost_for_this_sale
-                        total_pl = sale_pl + dividends_for_this_sale
+                    # --- ชั้นกลางใหม่: จัดกลุ่มตามวันที่ขาย (sell_date) ภายในหุ้นตัวนี้ ---
+                    grouped_by_date = defaultdict(list)
+                    for cs in computed_sales:
+                        grouped_by_date[cs['sale']['sell_date']].append(cs)
 
-                        child_values = (
-                            f"  └ {sale['lot_number']}",
-                            sale['sell_date'],
-                            self._format_number(sale['sell_volume'], is_float=False),
-                            self._format_number(cost_per_share),
-                            self._format_number(sale['sell_price_per_unit']),
-                            self._format_number(cost_for_this_sale),
-                            self._format_number(sale_value_net),
-                            self._format_number(sale_pl),
-                            self._format_number(dividends_for_this_sale),
-                            self._format_number(total_pl)
+                    # เรียงวันที่ล่าสุดขึ้นก่อน ให้สอดคล้องกับลำดับ query เดิม (ORDER BY sell_date DESC)
+                    for sell_date in sorted(grouped_by_date.keys(), reverse=True):
+                        date_group = grouped_by_date[sell_date]
+
+                        date_total_volume = sum(cs['sale']['sell_volume'] for cs in date_group)
+                        date_total_cost = sum(cs['cost'] for cs in date_group)
+                        date_total_sale = sum(cs['sale_value_net'] for cs in date_group)
+                        date_total_sale_pl = sum(cs['sale_pl'] for cs in date_group)
+                        date_total_dividends = sum(cs['dividends'] for cs in date_group)
+                        date_total_pl = sum(cs['total_pl'] for cs in date_group)
+
+                        date_avg_cost = date_total_cost / date_total_volume if date_total_volume > 0 else 0
+                        date_avg_sell = date_total_sale / date_total_volume if date_total_volume > 0 else 0
+
+                        date_values = (
+                            f"  ▸ {sell_date}" if len(date_group) > 1 else f"  ▸ {sell_date} (1 ล็อต)",
+                            sell_date,
+                            self._format_number(date_total_volume, is_float=False),
+                            self._format_number(date_avg_cost),
+                            self._format_number(date_avg_sell),
+                            self._format_number(date_total_cost),
+                            self._format_number(date_total_sale),
+                            self._format_number(date_total_sale_pl),
+                            self._format_number(date_total_dividends),
+                            self._format_number(date_total_pl)
                         )
-                        child_tags = ('child_row',) + self._get_profit_tags(total_pl)
-                        self.closed_trades_tree.insert(parent_iid, tk.END, values=child_values, tags=child_tags)
+                        date_tags = ('date_row',) + self._get_profit_tags(date_total_pl)
+                        date_iid = self.closed_trades_tree.insert(parent_iid, tk.END, values=date_values, open=False, tags=date_tags)
+
+                        # --- ชั้นล่างสุด: รายละเอียดแต่ละล็อตที่ขายในวันนั้น ---
+                        for cs in date_group:
+                            sale = cs['sale']
+                            child_values = (
+                                f"      └ {sale['lot_number']}",
+                                sale['sell_date'],
+                                self._format_number(sale['sell_volume'], is_float=False),
+                                self._format_number(cs['cost_per_share']),
+                                self._format_number(sale['sell_price_per_unit']),
+                                self._format_number(cs['cost']),
+                                self._format_number(cs['sale_value_net']),
+                                self._format_number(cs['sale_pl']),
+                                self._format_number(cs['dividends']),
+                                self._format_number(cs['total_pl'])
+                            )
+                            child_tags = ('child_row',) + self._get_profit_tags(cs['total_pl'])
+                            self.closed_trades_tree.insert(date_iid, tk.END, values=child_values, tags=child_tags)
 
                 # --- แสดงแถวสรุปรวม (Grand Total) ---
                 if all_sales:
@@ -545,27 +590,51 @@ class StockAnalyzeApp(tk.Toplevel):
                         self._format_number(symbol_dividends),
                         self._format_number(symbol_returns),
                         self._format_number(symbol_total)
-                    ))
+                    ), tags=('parent_row',))
 
-                    # จัดกลุ่มย่อยตาม Lot Number
-                    grouped_by_lot = defaultdict(list)
+                    # --- ชั้นกลางใหม่: จัดกลุ่มตามวันที่ได้รับเงิน (payment_date) ภายในหุ้นตัวนี้ ---
+                    # (รวมยอดของทุก lot ที่ได้รับเงินวันเดียวกันเข้าด้วยกันก่อน)
+                    grouped_by_date = defaultdict(list)
                     for record in records:
-                        grouped_by_lot[record['lot_number']].append(record)
+                        grouped_by_date[record['payment_date']].append(record)
 
-                    for lot_number, lot_records in grouped_by_lot.items():
-                        for record in lot_records:
+                    for pay_date in sorted(grouped_by_date.keys(), reverse=True):
+                        date_records = grouped_by_date[pay_date]
+
+                        date_dividends = sum(r['amount'] for r in date_records if r['type'] == 'dividend')
+                        date_returns = sum(r['amount'] for r in date_records if r['type'] == 'return')
+                        date_total = date_dividends + date_returns
+
+                        date_label = (
+                            f"  ▸ {pay_date}" if len(date_records) > 1
+                            else f"  ▸ {pay_date} (1 รายการ)"
+                        )
+                        date_values = (
+                            date_label,
+                            f"{len(date_records)} lot",
+                            pay_date,
+                            self._format_number(date_dividends),
+                            self._format_number(date_returns),
+                            self._format_number(date_total)
+                        )
+                        date_iid = self.returns_tree.insert(
+                            symbol_parent_iid, tk.END, open=False, values=date_values, tags=('date_row',)
+                        )
+
+                        # --- ชั้นล่างสุด: รายละเอียดแต่ละ lot ที่ได้รับเงินในวันนั้น ---
+                        for record in date_records:
                             dividend_amount = record['amount'] if record['type'] == 'dividend' else 0
                             return_amount = record['amount'] if record['type'] == 'return' else 0
 
                             child_values = (
-                                f"  └ {record['symbol']}",
+                                f"      └ {record['symbol']}",
                                 record['lot_number'],
                                 record['payment_date'],
                                 self._format_number(dividend_amount) if dividend_amount else "",
                                 self._format_number(return_amount) if return_amount else "",
                                 self._format_number(record['amount'])
                             )
-                            self.returns_tree.insert(symbol_parent_iid, tk.END, values=child_values)
+                            self.returns_tree.insert(date_iid, tk.END, values=child_values, tags=('child_row',))
 
                 # คำนวณ Grand Total จากข้อมูลทั้งหมด
                 grand_total_dividends = sum(r['amount'] for r in all_returns if r['type'] == 'dividend')
